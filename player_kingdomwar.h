@@ -10,8 +10,7 @@ namespace gg
 
 	namespace KingdomWar
 	{
-		enum
-		{
+		enum{
 			PosEmpty = -1,
 			PosCity,
 			PosPath,
@@ -31,6 +30,8 @@ namespace gg
 			int _from_city_id;
 		};
 
+		SHAREPTR(Position, PositionPtr);
+		
 		SHAREPTR(playerMan, playerManPtr);
 		STDVECTOR(playerManPtr, ManList);
 
@@ -74,7 +75,7 @@ namespace gg
 
 			int _id;
 			int _hp;
-			Position _pos;
+			PositionPtr _pos;
 			FormationPtr _fm;
 		};
 
@@ -88,6 +89,8 @@ namespace gg
 		public:
 			playerKingdomWar(playerData* const own);
 
+			bool inited() const;
+			void initData();
 			void loadDB();
 			virtual bool _auto_save();
 			virtual void _auto_update();
@@ -100,7 +103,7 @@ namespace gg
 			void setPosition(int army_id, int type, int id, unsigned time, int from_city_id = -1);
 
 			bool isDead(int army_id);
-			KingdomWar::Position& getPosition(int army_id);
+			KingdomWar::PositionPtr getPosition(int army_id);
 			int getBV(int army_id);
 			bool manUsed(int army_id, int man_id);
 

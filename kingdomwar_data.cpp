@@ -129,6 +129,11 @@ namespace gg
 			return p;
 		}
 
+		bool PathItemMgr::empty() const
+		{
+			return _item_list.size() < 3;
+		}
+
 		void PathItemMgr::getMainInfo(qValue& q) const
 		{
 			if (empty())
@@ -462,16 +467,30 @@ namespace gg
 			return kingdomwar_sys.getBattlePtr(d, _army_id);
 		}
 
-		NpcFigter::NpcFigter(const mongo::BSONElement& obj)
+		NpcFighter::NpcFighter(const mongo::BSONElement& obj)
 		{
 		}
 
-		int NpcFigter::type() const
+		NpcFighter::NpcFighter(int id)
+		{
+		}
+
+		mongo::BSONObj NpcFighter::toBSON() const
+		{
+			return BSON("t" << (int)TypeNpc);
+		}
+
+		void NpcFighter::getInfo(qValue& q) const
+		{
+		
+		}
+
+		int NpcFighter::type() const
 		{
 			return TypeNpc;
 		}
 
-		bool NpcFigter::isDead() const
+		bool NpcFighter::isDead() const
 		{
 			if (_hp <= 0)
 				return true;
@@ -483,7 +502,7 @@ namespace gg
 			return true;
 		}
 
-		sBattlePtr NpcFigter::getBattlePtr()
+		sBattlePtr NpcFighter::getBattlePtr()
 		{
 			return sBattlePtr();
 		}
@@ -539,7 +558,7 @@ namespace gg
 					{
 						int type = ele2[j]["t"].Int();
 						if (type == TypeNpc)
-							_defender_queue[i].push_back(Creator<NpcFigter>::Create(ele2[j]));
+							_defender_queue[i].push_back(Creator<NpcFighter>::Create(ele2[j]));
 						else
 							_defender_queue[i].push_back(Creator<PlayerFighter>::Create(ele2[j]));
 					}
@@ -640,6 +659,11 @@ namespace gg
 					break;
 				_defender_queue[queue_id].push_back(ptr);
 			}
+		}
+
+		void BattleField::tick()
+		{
+			update();
 		}
 
 		void BattleField::handleAddAttacker(unsigned tick_time)
@@ -753,7 +777,7 @@ namespace gg
 			if (_attacker_queue[id].empty())
 			{
 				_queue_state[id] = Free;
-				releaseDefender(id);
+				releaseDefender(id, tick_time);
 				if (noAttackers())
 					setDefenderWaitTimer(_last_battle_time + DefenderWaitTime);
 				return;
@@ -791,7 +815,7 @@ namespace gg
 				for (unsigned i = 0; i < QueueNum; ++i)
 				{
 					ForEach(FighterQueue, it, _attacker_queue[i])
-						_city->releaseAttacker(*it);
+						_city->releaseAttacker(*it, tick_time);
 					_attacker_queue[i].clear();
 				}
 				int win_nation = getWinNation();
@@ -818,10 +842,10 @@ namespace gg
 				_wins[i] = 0;
 		}
 
-		void BattleField::releaseDefender(int id)
+		void BattleField::releaseDefender(int id, unsigned tick_time)
 		{
 			ForEach(FighterQueue, it, _defender_queue[id])
-				_city->releaseDefender(*it);
+				_city->releaseDefender(*it, tick_time);
 			_defender_queue[id].clear();
 		}
 
@@ -909,12 +933,22 @@ namespace gg
 				_nation = Kingdom::wu;
 			else
 				_nation = Kingdom::nation_num;
+
+		}
+
+		int City::state()
+		{
+			return _battle_field->state() == Closed? 0 : 1;
 		}
 
 		void City::loadDB()
 		{
-			mongo::BSONObj key = BSON("ci" << _city->id());
-			mongo::BSONObj obj = db_mgr.FindOne(DBN::dbKingdomWarCityInfo, key);
+			CityPtr ptr = boost::dynamic_pointer_cast<City>(shared_from_this());
+			_battle_field = Creator<BattleField>::Create(ptr);
+			_battle_field->loadDB();
+
+			mongo::BSONObj key = BSON("ci" << _id);
+			mongo::BSONObj obj = db_mgr.FindOne(DBN::dbKingdomWarCityBase, key);
 			if (obj.isEmpty())
 				return;
 
@@ -929,9 +963,9 @@ namespace gg
 
 		bool City::_auto_save()
 		{
-			mongo::BSONObj key = BSON("ci" << _city->id());
+			mongo::BSONObj key = BSON("ci" << _id);
 			mongo::BSONObjBuilder obj;
-			obj << "ci" << _city->id() << "nt" << _nation;
+			obj << "ci" << _id << "nt" << _nation;
 			if (!_npc_list.empty())
 			{
 				mongo::BSONArrayBuilder b;
@@ -939,7 +973,7 @@ namespace gg
 					b.append((*it)->toBSON());
 				obj << "nl" << b.arr();
 			}
-			return db_mgr.SaveMongo(DBN::dbKingdomWarCityInfo, key, obj.obj());
+			return db_mgr.SaveMongo(DBN::dbKingdomWarCityBase, key, obj.obj());
 		}
 		
 		int City::enter(unsigned time, playerDataPtr d, int army_id)
@@ -968,9 +1002,9 @@ namespace gg
 
 		int City::leave(unsigned time, playerDataPtr d, int army_id, int to_city_id)
 		{
-			Position& pos = d->KingDomWar->getPosition(army_id);
+			PositionPtr pos = d->KingDomWar->getPosition(army_id);
 			bool find = false;
-			if (pos._type == PosSiege)
+			if (pos->_type == PosSiege)
 			{
 				ForEach(PlayerFighterList, it, _attacker_backup)
 				{
@@ -1049,6 +1083,17 @@ namespace gg
 			return ptr;
 		}
 
+		void City::releaseDefender(FighterPtr& ptr, unsigned tick_time)
+		{
+			_defender_backup.push_back(boost::dynamic_pointer_cast<PlayerFighter>(ptr));
+			noticeAddDefender(tick_time);
+		}
+
+		void City::releaseAttacker(FighterPtr& ptr, unsigned tick_time)
+		{
+			_attacker_backup.push_back(boost::dynamic_pointer_cast<PlayerFighter>(ptr));
+		}
+
 		void City::handleBattleResult(unsigned tick_time, bool result, int nation)
 		{
 			if (result)
@@ -1095,7 +1140,6 @@ namespace gg
 			_update_info.toArray();
 			ForEach(PathMap, it, _paths)
 			{
-				it->second->update();
 				qValue tmp;
 				it->second->getUpdateInfo(tmp);
 				if (!tmp.isEmpty())
@@ -1184,6 +1228,18 @@ namespace gg
 						_main_nation_info.append(_nations[i]);
 				}
 			}
+		}
+		
+		void CityList::tick()
+		{
+			ForEach(Citys, it, _citys)
+				(*it)->tick();
+		}
+
+		void CityList::loadDB()
+		{
+			ForEach(Citys, it, _citys)
+				(*it)->loadDB();
 		}
 	}
 }

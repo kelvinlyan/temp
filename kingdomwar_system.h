@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kingdomwar_data.h"
+#include "dbDriver.h"
 
 #define kingdomwar_sys (*gg::kingdomwar_system::_Instance)
 
@@ -25,13 +26,13 @@ namespace gg
 			DeclareRegFunction(moveReq);
 			DeclareRegFunction(formationReq);
 			DeclareRegFunction(setFormationReq);
+			DeclareRegFunction(playerInfoReq);
 			
 			void mainInfo(playerDataPtr d);
 			virtual void tick();
 
 			void goBackMainCity(unsigned time, playerDataPtr d, int army_id);
 
-			void timerTick();
 			void addTimer(unsigned tick_time, const KingdomWar::Timer::TickFunc& func);
 
 			int getCostTime(int from_id, int to_id);
@@ -39,6 +40,9 @@ namespace gg
 
 		private:
 			void loadFile();
+			void loadDB();
+			void startTimer();
+			void timerTick();
 
 		private:
 			KingdomWar::CityList _city_list;

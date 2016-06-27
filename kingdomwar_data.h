@@ -157,8 +157,6 @@ namespace gg
 				void getMainInfo(qValue& q) { _manager.getMainInfo(q); }
 				void getUpdateInfo(qValue& q) { _manager.getUpdateInfo(q); }
 
-				void update();
-
 			private:
 				inline bool timerOverTime(int timer_id);
 				void resetTimer();
@@ -236,7 +234,7 @@ namespace gg
 				std::vector<int> _man_hp;
 		};
 
-		SHAREPTR(NpcFigter, NpcFighterPtr);
+		SHAREPTR(NpcFighter, NpcFighterPtr);
 		STDVECTOR(NpcFighterPtr, NpcFighterList);
 
 		class BattleField
@@ -258,6 +256,8 @@ namespace gg
 
 				void update();
 
+				virtual void tick();
+
 			private:
 				virtual bool _auto_save();
 
@@ -273,7 +273,7 @@ namespace gg
 				void tickAttackerWait(unsigned tick_time);
 				void tickDefenderWait(unsigned tick_time);
 
-				void releaseDefender(int queue_id);
+				void releaseDefender(int queue_id, unsigned tick_time);
 
 				int unfilledAttackerQueue();
 				int unfilledDefenderQueue();
@@ -293,7 +293,7 @@ namespace gg
 				int _first_battle_nation;
 				int _wins[3];
 
-				qValue _main_info;
+				mutable qValue _main_info;
 		};
 
 		SHAREPTR(BattleField, BattleFieldPtr);
@@ -318,6 +318,8 @@ namespace gg
 
 				void attach(playerDataPtr d) { _battle_field->attach(d); }
 				void detach(playerDataPtr d) { _battle_field->detach(d); }
+
+				void tick() { _battle_field->tick(); }
 			
 			private:
 				virtual bool _auto_save();
@@ -331,15 +333,15 @@ namespace gg
 				FighterPtr getDefender();
 				FighterPtr getNpcDefender();
 
-				void releaseAttacker(FighterPtr& ptr);
-				void releaseDefender(FighterPtr& ptr);
+				void releaseAttacker(FighterPtr& ptr, unsigned tick_time);
+				void releaseDefender(FighterPtr& ptr, unsigned tick_time);
 
 			private:
 				int _id;
 				int _nation;
 				std::vector<PathPtr> _paths;
 
-				FighterList _npc_list;
+				NpcFighterList _npc_list;
 				PlayerFighterList _defender_backup;
 				PlayerFighterList _attacker_backup;
 				BattleFieldPtr _battle_field;
@@ -370,9 +372,12 @@ namespace gg
 			public:
 				CityList();
 
+				void loadDB();
+
 				CityPtr getCity(int id);
 				void push(const CityPtr& ptr);
 				void update(bool is_first = false);	
+				void tick();
 
 				void getStateInfo(qValue& q) { q = _main_state_info.Copy(); }
 				void getUpStateInfo(qValue& q) { q = _update_state_info; } 

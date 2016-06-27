@@ -1,24 +1,52 @@
 #include "kingdomwar_system.h"
 #include "playerManager.h"
 #include "man_system.h"
+#include "net_helper.hpp"
 
 namespace gg
 {
 	kingdomwar_system* const kingdomwar_system::_Instance = new kingdomwar_system();
 
+	kingdomwar_system::kingdomwar_system()
+	{
+	}
+
 	void kingdomwar_system::initData()
 	{
 		loadFile();
+		loadDB();
+		startTimer();
 	}
 
 	void kingdomwar_system::timerTick()
 	{
-		static unsigned next_tick_time = 0;
-		unsigned cur_time = Common::gameTime();
-		if (cur_time >= next_tick_time)
+		_timer.check(Common::gameTime());
+		tick();
+		_city_list.tick();
+	}
+
+	void kingdomwar_system::tick()
+	{
+		_city_list.update();
+		_path_list.update();
+		if (!Updater::empty())
 		{
-			next_tick_time = cur_time + 1;
-			_timer.check(cur_time);
+			qValue state;
+			qValue nation;
+			qValue path;
+			_city_list.getUpStateInfo(state);
+			_city_list.getUpNationInfo(nation);
+			_path_list.getUpdateInfo(path);
+			if (state.isEmpty() && nation.isEmpty() && path.isEmpty())
+				return;
+			qValue q(qJson::qj_object);
+			q.addMember("s", state);
+			q.addMember("c", nation);
+			q.addMember("p", path);
+			qValue m;
+			m.append(res_sucess);
+			m.append(q);
+			detail::batchOnline(Updater::_observers, m, gate_client::kingdom_war_main_update_resp);
 		}
 	}
 	
@@ -64,6 +92,31 @@ namespace gg
 				lines_list.push_back(lines);
 			}
 			_shortest_path.load(lines_list);
+		}
+	}
+
+	void kingdomwar_system::loadDB()
+	{
+		_city_list.loadDB();
+		objCollection objs = db_mgr.Query(DBN::dbPlayerKingdomWar);
+		ForEachC(objCollection, it, objs)
+		{
+			int pid = (*it)[strPlayerID].Int();
+			playerDataPtr d = player_mgr.getPlayer(pid);
+			if (!d) continue;
+			for (unsigned i = 0; i < 3; ++i)
+			{
+				KingdomWar::PositionPtr pos = d->KingDomWar->getPosition(i);
+				if (pos->_type == KingdomWar::PosPath)
+				{
+					KingdomWar::PathPtr ptr = getPath(pos->_id);
+					if (!ptr) continue;
+					int to_city_id = ptr->id() / 100;
+					if (to_city_id == pos->_from_city_id)
+						to_city_id = ptr->id() % 100;
+					ptr->enter(pos->_time, d, i, to_city_id);
+				}
+			}
 		}
 	}
 
@@ -170,6 +223,43 @@ namespace gg
 		mainInfo(d);
 	}
 
+	void kingdomwar_system::moveReq(net::Msg& m, Json::Value& r)
+	{
+		playerDataPtr d = player_mgr.getPlayer(m.playerID);
+		if (!d || d->Info->Nation() == Kingdom::null) 
+			Return(r, err_illedge);
+
+		ReadJsonArray;
+		int army_id = js_msg[0u].asInt();
+		int to_city_id = js_msg[1u].asInt();
+
+		if (!d->KingDomWar->inited())
+			Return(r, err_illedge);
+		
+		KingdomWar::PositionPtr pos = d->KingDomWar->getPosition(army_id);
+		if (!pos || pos->_type == KingdomWar::PosPath)
+			Return(r, err_illedge);
+
+		KingdomWar::CityPtr ptr = getCity(pos->_id);
+		int res = ptr->leave(Common::gameTime(), d, army_id, to_city_id);
+		Return(r, res);
+	}
+
+	void kingdomwar_system::formationReq(net::Msg& m, Json::Value& r)
+	{
+	
+	}
+
+	void kingdomwar_system::setFormationReq(net::Msg& m, Json::Value& r)
+	{
+	
+	}
+
+	void kingdomwar_system::playerInfoReq(net::Msg& m, Json::Value& r)
+	{
+		
+	}
+
 	void kingdomwar_system::mainInfo(playerDataPtr d)
 	{
 		qValue m;
@@ -188,6 +278,7 @@ namespace gg
 		d->sendToClientFillMsg(gate_client::kingdom_war_main_info_resp, m);
 	}
 
+
 	void kingdomwar_system::addTimer(unsigned tick_time, const KingdomWar::Timer::TickFunc& func)
 	{
 		_timer.add(tick_time, func);
@@ -199,5 +290,15 @@ namespace gg
 		if (!ptr)
 			return;
 		ptr->enter(time, d, army_id);
+	}
+
+	void kingdomwar_system::startTimer()
+	{
+		Timer::AddEventNextTimeCT(boostBind(kingdomwar_system::timerTick, this), Inter::event_timer_kingdomwar, 0, 2);
+	}
+
+	int kingdomwar_system::getCostTime(int from_id, int to_id)
+	{
+		return 0;
 	}
 }

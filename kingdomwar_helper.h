@@ -85,12 +85,13 @@ namespace gg
 		class Updater
 		{
 			public:
+				bool empty() const { return _observers.empty(); }
 				void attach(playerDataPtr d);
 				void detach(playerDataPtr d);
 				virtual void tick() = 0;
 
 			protected:
-				std::set<playerDataPtr> _observers;
+				std::set<int> _observers;
 		};
 	
 		class Timer

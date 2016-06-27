@@ -1,4 +1,5 @@
 #include "kingdomwar_helper.h"
+#include "playerData.h"
 #include "kingdomwar_system.h"
 
 namespace gg
@@ -108,12 +109,12 @@ namespace gg
 
 		void Updater::attach(playerDataPtr d)
 		{
-			_observers.insert(d);
+			_observers.insert(d->ID());
 		}
 
 		void Updater::detach(playerDataPtr d)
 		{
-			_observers.erase(d);
+			_observers.erase(d->ID());
 		}
 	}
 }

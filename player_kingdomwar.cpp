@@ -1,4 +1,5 @@
 #include "player_kingdomwar.h"
+#include "kingdomwar_system.h"
 #include "playerManager.h"
 
 namespace gg
@@ -131,20 +132,21 @@ namespace gg
 		Army::Army(int id, playerData* const own)
 		{
 			_id = id;
-			_hp = 0;
+			_hp = 100;
+			_pos = Creator<Position>::Create();
 			_fm = Creator<Formation>::Create(id, own);
 		}
 
 		mongo::BSONObj Army::toBSON() const
 		{
-			return BSON("i" << _id << "h" << _hp << "f" << _fm->toBSON() << "p" << _pos.toBSON());
+			return BSON("i" << _id << "h" << _hp << "f" << _fm->toBSON() << "p" << _pos->toBSON());
 		}
 
 		void Army::load(const mongo::BSONElement& obj)
 		{
 			_hp = obj["h"].Int();
 			_fm->load(obj["f"]);
-			_pos.load(obj["p"]);
+			_pos->load(obj["p"]);
 		}
 	}
 
@@ -222,29 +224,60 @@ namespace gg
 
 		KingdomWar::ArmyPtr& ptr = _armys[army_id];
 		//KingdomWar::Position pos = *(ptr->_pos);
-		ptr->_pos._type = type;
-		ptr->_pos._id = id;
-		ptr->_pos._time = time;
+		ptr->_pos->_type = type;
+		ptr->_pos->_id = id;
+		ptr->_pos->_time = time;
 		if (from_city_id != -1)
-			ptr->_pos._from_city_id = from_city_id;
+			ptr->_pos->_from_city_id = from_city_id;
 		_sign_save();
 	}
 
 	bool playerKingdomWar::isDead(int army_id)
 	{
+		if (army_id < 0 || army_id >= _armys.size())
+			return true;
 		KingdomWar::ArmyPtr& ptr = _armys[army_id];
 		if (ptr->_hp <= 0)
 			return true;
 		return false;
 	}
 
-	KingdomWar::Position& playerKingdomWar::getPosition(int army_id)
+	KingdomWar::PositionPtr playerKingdomWar::getPosition(int army_id)
 	{
+		if (army_id < 0 || army_id >= _armys.size())
+			return KingdomWar::PositionPtr();
 		return _armys[army_id]->_pos;
 	}
 
 	const KingdomWar::ManList& playerKingdomWar::getFM(int army_id) const
 	{
 		return _armys[army_id]->_fm->manList();
+	}
+
+	int playerKingdomWar::getBV(int army_id)
+	{
+		return 0;
+	}
+
+	bool playerKingdomWar::manUsed(int army_id, int man_id)
+	{
+		return false;
+	}
+
+	bool playerKingdomWar::inited() const
+	{
+		return _armys.size() >= KingdomWar::ArmyNum;
+	}
+
+	void playerKingdomWar::initData()
+	{
+		if (Own().Info->Nation() == Kingdom::null)
+			return;
+		unsigned i = _armys.size();
+		for (; i < KingdomWar::ArmyNum; ++i)
+		{
+			_armys.push_back(Creator<KingdomWar::Army>::Create(i, _Own));
+			kingdomwar_sys.goBackMainCity(0, Own().getOwnDataPtr(), i);
+		}
 	}
 }
