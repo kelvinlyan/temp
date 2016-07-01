@@ -1,160 +1,51 @@
 #include "player_kingdomwar.h"
 #include "kingdomwar_system.h"
 #include "playerManager.h"
+#include "man_system.h"
 
 namespace gg
 {
 	namespace KingdomWar
 	{
-		mongo::BSONObj Position::toBSON() const
+		enum{
+			ReportSize = 20,
+		};
+
+		Report::Report(const mongo::BSONElement& obj)
 		{
-			return BSON("t" << _type << "i" << _id << "tm" << _time << "f" << _from_city_id);
+			_army_id = obj["a"].Int();
+			_city_id = obj["c"].Int();
+			_state = obj["s"].Int();
+			_target_nation = obj["n"].Int();
+			_target_name = obj["m"].String();
+			_exploit = obj["e"].Int();
+			_rep_id = obj["r"].String();
 		}
 
-		void Position::load(const mongo::BSONElement& obj)
+		mongo::BSONObj Report::toBSON() const
 		{
-			_type = obj["t"].Int();
-			_id = obj["i"].Int();
-			_time = obj["tm"].Int();
-			_from_city_id = obj["f"].Int();
+			return BSON("a" << _army_id << "c" << _city_id << "s" << _state << "n" << _target_nation
+				<< "m" << _target_name << "e" << _exploit << "r" << _rep_id);
 		}
 
-		Formation::Formation(int army_id, playerData* const own)
-			: _auto_player(own), _army_id(army_id)
-		{
-			_fm_id = 0;
-			_power = 0;
-			_man_list.assign(9, playerManPtr());
-		}
-
-		void Formation::load(const mongo::BSONElement& obj)
-		{
-			_fm_id = obj["i"].Int();
-			const std::vector<mongo::BSONElement> ele = obj["f"].Array();
-			for (unsigned i = 0; i < 9; ++i)
-				_man_list[i] = Own().Man->findMan(ele[i].Int());
-			recalFM();
-		}
-
-		mongo::BSONArray Formation::manListBSON() const
-		{
-			mongo::BSONArrayBuilder b;
-			ForEachC(ManList, it, _man_list)
-				b.append((*it)? (*it)->mID() : -1);
-			return b.arr();
-		}
-
-		mongo::BSONObj Formation::toBSON() const
-		{
-			return BSON("i" << _fm_id << "f" << manListBSON());
-		}
-
-		void Formation::getInfo(qValue& q) const
-		{
-			q.addMember("a", _army_id);
-			q.addMember("i", _fm_id);
-			q.addMember("v", _power);
-			qValue tmp;
-			ForEachC(ManList, it, _man_list)
-				tmp.append((*it)? (*it)->mID() : -1);
-			q.addMember("f", tmp);
-		}
-
-		int Formation::setFormation(int fm_id, const int fm[9])
-		{
-			const FMCFG::HOLEVEC& config = playerWarFM::getConfig(fm_id).HOLES;
-			boost::unordered_set<int> SAMEMAN;
-			for (unsigned i = 0; i < 9; ++i)
-			{
-				if (fm[i] < 0)continue;
-				if (!SAMEMAN.insert(fm[i] / 100).second)return err_fomat_same_man;
-				if (Own().KingDomWar->manUsed(_army_id, fm[i])) return err_fomat_same_man;
-			}
-
-			ManList tmpList;
-			tmpList.assign(9, playerManPtr());
-			for (unsigned i = 0; i < 9; ++i)
-			{
-				if (fm[i] < 0)continue;
-				if (!config[i].Use)continue;
-				if (Own().LV() < config[i].LV)return err_format_hole_limit;
-				if (config[i].Process > 0 && !Own().War->isChallenge(config[i].Process))return err_format_hole_limit;
-				playerManPtr man = Own().Man->findMan(fm[i]);//ÊÇ·ñÂú×ã¿ªÆôÌõ¼þ
-				tmpList[i] = man;
-			}
-
-			_man_list = tmpList;
-			recalFM();
-			_sign_update();
-			return res_sucess;
-		}
-
-		void Formation::recalFM()
-		{
-			_power = 0;
-			unsigned num = 0;
-			for (unsigned i = 0; i < 9; ++i)
-			{
-				playerManPtr& man = _man_list[i];
-				if (!man)continue;
-				++num;
-				_power += man->battleValue();
-			}
-			const FMCFG& config = playerWarFM::getConfig(_fm_id);
-			const int scLV = Own().Research->getForLV(config.techID);
-			_power += (scLV * 7 * num);
-			//Èç¹ûÔ½½ç//ÄÇÃ´10ÒÚ
-			const static int MaxValue = 1000000000;//10ÒÚ
-			if (_power < 0 || _power > MaxValue)
-				_power = MaxValue;
-		}
-
-		bool Formation::_auto_save()
-		{
-			return true;
-		}
-
-		void Formation::_auto_update()
-		{
-			update();
-		}
-
-		void Formation::update()
-		{
-			qValue m;
-			m.append(res_sucess);
-			qValue q(qJson::qj_object);
-			getInfo(q);
-			m.append(q);
-			Own().sendToClientFillMsg(gate_client::kingdom_war_formation_resp, m);
-		}
-
-		Army::Army(int id, playerData* const own)
-		{
-			_id = id;
-			_hp = 100;
-			_pos = Creator<Position>::Create();
-			_fm = Creator<Formation>::Create(id, own);
-		}
-
-		mongo::BSONObj Army::toBSON() const
-		{
-			return BSON("i" << _id << "h" << _hp << "f" << _fm->toBSON() << "p" << _pos->toBSON());
-		}
-
-		void Army::load(const mongo::BSONElement& obj)
-		{
-			_hp = obj["h"].Int();
-			_fm->load(obj["f"]);
-			_pos->load(obj["p"]);
+		void Report::getInfo(qValue& q)
+		{	
+			q.append(_army_id);
+			q.append(_city_id);
+			q.append(_state);
+			q.append(_target_nation);
+			q.append(_target_name);
+			q.append(_exploit);
+			q.append(_rep_id);
 		}
 	}
 
 	playerKingdomWar::playerKingdomWar(playerData* const own)
-		: _auto_player(own)
+		: _auto_player(own), _report_id(0), _exploit(0), _total_exploit(0)
 	{
-		for (unsigned i = 0; i < 3; ++i)
-			_armys.push_back(Creator<KingdomWar::Army>::Create(i, own));
+		std::string path = "./report/kingdomwar/" + Common::toString(Own().ID());
+		Common::createDirectories(path);
+		_army_hp.assign(KingdomWar::ArmyNum, 100);
 	}
 
 	void playerKingdomWar::loadDB()
@@ -170,19 +61,35 @@ namespace gg
 			for (unsigned i = 0; i < ele.size(); ++i)
 				_man_hp[ele[i]["i"].Int()] = ele[i]["h"].Int();
 		}
-		checkNotEoo(obj["am"])
+		checkNotEoo(obj["ah"])
 		{
-			std::vector<mongo::BSONElement> ele = obj["am"].Array();
+			std::vector<mongo::BSONElement> ele = obj["ah"].Array();
 			for (unsigned i = 0; i < ele.size(); ++i)
-				_armys[i]->load(ele[i]);
+				_army_hp[i] = ele[i].Int();
 		}
+		checkNotEoo(obj["rl"])
+		{
+			std::vector<mongo::BSONElement> ele = obj["rl"].Array();
+			for (unsigned i = 0; i < ele.size(); ++i)
+			{
+				KingdomWar::ReportPtr ptr = Creator<KingdomWar::Report>::Create(ele[i]);
+				_report_list.push_back(ptr);
+			}
+		}
+		checkNotEoo(obj["ri"])
+			_report_id = obj["ri"].Int();
+		checkNotEoo(obj["ep"])
+			_exploit = obj["ep"].Int();
+		checkNotEoo(obj["te"])
+			_total_exploit = obj["te"].Int();
 	}
 
 	bool playerKingdomWar::_auto_save()
 	{
 		mongo::BSONObj key = BSON(strPlayerID << Own().ID());
 		mongo::BSONObjBuilder obj;
-		obj << strPlayerID << Own().ID();
+		obj << strPlayerID << Own().ID() << "ri" << _report_id << "ep" << _exploit
+			<< "te" << _total_exploit;
 		if (!_man_hp.empty())
 		{
 			mongo::BSONArrayBuilder b;
@@ -193,16 +100,22 @@ namespace gg
 		
 		{
 			mongo::BSONArrayBuilder b;
-			ForEach(KingdomWar::Armys, it, _armys)
+			ForEach(ArmyHp, it, _army_hp)
+				b.append((*it));
+			obj << "ah" << b.arr();
+		}
+		if (!_report_list.empty())
+		{
+			mongo::BSONArrayBuilder b;
+			ForEach(ReportList, it, _report_list)
 				b.append((*it)->toBSON());
-			obj << "am" << b.arr();
+			obj << "rl" << b.arr();
 		}
 		return db_mgr.SaveMongo(DBN::dbPlayerKingdomWar, key, obj.obj());
 	}
 
 	void playerKingdomWar::_auto_update()
 	{
-		
 	}
 
 	int playerKingdomWar::manHp(int man_id) const
@@ -217,67 +130,76 @@ namespace gg
 		_sign_save();
 	}
 
-	void playerKingdomWar::setPosition(int army_id, int type, int id, unsigned time, int from_city_id)
-	{
-		if (army_id >= _armys.size())
-			return;
-
-		KingdomWar::ArmyPtr& ptr = _armys[army_id];
-		//KingdomWar::Position pos = *(ptr->_pos);
-		ptr->_pos->_type = type;
-		ptr->_pos->_id = id;
-		ptr->_pos->_time = time;
-		if (from_city_id != -1)
-			ptr->_pos->_from_city_id = from_city_id;
-		_sign_save();
-	}
-
 	bool playerKingdomWar::isDead(int army_id)
 	{
-		if (army_id < 0 || army_id >= _armys.size())
-			return true;
-		KingdomWar::ArmyPtr& ptr = _armys[army_id];
-		if (ptr->_hp <= 0)
+		if (_army_hp[army_id] < 1)
 			return true;
 		return false;
 	}
 
-	KingdomWar::PositionPtr playerKingdomWar::getPosition(int army_id)
+	std::string playerKingdomWar::addReport(int army_id, int city_id, int state, int target_nation, const std::string& target_name, unsigned exploit)
 	{
-		if (army_id < 0 || army_id >= _armys.size())
-			return KingdomWar::PositionPtr();
-		return _armys[army_id]->_pos;
+		++_report_id;
+		if (_report_id > KingdomWar::ReportSize)
+			_report_id = 1;
+			
+		std::string rep = Common::toString(_report_id);
+		KingdomWar::ReportPtr ptr = Creator<KingdomWar::Report>::Create(army_id, city_id, state, target_nation, target_name, exploit, rep);
+		_report_list.push_front(ptr);
+		while (_report_list.size() > KingdomWar::ReportSize)
+			_report_list.pop_back();
+		std::string path = "kingdomwar/" + Common::toString(Own().ID()) + "/" + rep;
+		return path;
 	}
 
-	const KingdomWar::ManList& playerKingdomWar::getFM(int army_id) const
+	void playerKingdomWar::updateReport()
 	{
-		return _armys[army_id]->_fm->manList();
-	}
-
-	int playerKingdomWar::getBV(int army_id)
-	{
-		return 0;
-	}
-
-	bool playerKingdomWar::manUsed(int army_id, int man_id)
-	{
-		return false;
-	}
-
-	bool playerKingdomWar::inited() const
-	{
-		return _armys.size() >= KingdomWar::ArmyNum;
-	}
-
-	void playerKingdomWar::initData()
-	{
-		if (Own().Info->Nation() == Kingdom::null)
-			return;
-		unsigned i = _armys.size();
-		for (; i < KingdomWar::ArmyNum; ++i)
+		qValue m;
+		m.append(res_sucess);
+		qValue q;
+		ForEachC(ReportList, it, _report_list)
 		{
-			_armys.push_back(Creator<KingdomWar::Army>::Create(i, _Own));
-			kingdomwar_sys.goBackMainCity(0, Own().getOwnDataPtr(), i);
+			qValue tmp;
+			(*it)->getInfo(tmp);
+			q.append(tmp);
 		}
+		m.append(q);
+		Own().sendToClientFillMsg(gate_client::kingdom_war_report_info_resp, m);
+	}
+
+	int playerKingdomWar::getExploit()
+	{
+		return _exploit;
+	}
+
+	int playerKingdomWar::alterExploit(int num)
+	{
+		if (num < 0)
+			return _exploit;
+		int tmp = _exploit;
+		_exploit += num;
+		_total_exploit += num;
+		_sign_auto();
+		return tmp;
+	}
+
+	int playerKingdomWar::alterArmyHp(int army_id, int num)
+	{
+		int tmp = _army_hp[army_id];
+		_army_hp[army_id] += num;
+		if (_army_hp[army_id] < 0)
+			_army_hp[army_id] = 0;
+		_sign_save();
+		return _army_hp[army_id] - tmp;
+	}
+
+	int playerKingdomWar::useHpItem(int army_id, int num)
+	{
+		return res_sucess;
+	}
+
+	int playerKingdomWar::armyHp(int army_id)
+	{
+		return _army_hp[army_id];
 	}
 }

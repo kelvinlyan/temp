@@ -61,6 +61,16 @@ namespace gg
 					}
 				}
 			}
+
+	/*		for (unsigned i = 0; i < lines.size(); ++i)
+			{
+				Line& l = lines[i];
+				cout << "From " << start_id << " to " << i << " : ";
+				for (unsigned j = 0; j < l.size(); ++j)
+					cout << l[j] << " ";
+				cout << endl;
+			}
+	*/
 		}
 		
 		void LineInfo::set(const Line& line)
@@ -107,14 +117,5 @@ namespace gg
 			return _line_info[from_id][to_id];
 		}
 
-		void Updater::attach(playerDataPtr d)
-		{
-			_observers.insert(d->ID());
-		}
-
-		void Updater::detach(playerDataPtr d)
-		{
-			_observers.erase(d->ID());
-		}
 	}
 }

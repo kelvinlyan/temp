@@ -7,6 +7,11 @@ namespace gg
 		enum
 		{
 			ArmyNum = 3,
+
+			PosEmpty = -1,
+			PosCity,
+			PosPath,
+			PosSiege,
 		};
 	}
 }

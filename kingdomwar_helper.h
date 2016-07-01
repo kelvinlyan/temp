@@ -80,56 +80,19 @@ namespace gg
 				LineInfosList _line_info;
 				static LineInfo _empty;
 		};
-
-
-		class Updater
+		
+		class Observer
 		{
 			public:
-				bool empty() const { return _observers.empty(); }
-				void attach(playerDataPtr d);
-				void detach(playerDataPtr d);
-				virtual void tick() = 0;
+				typedef std::set<int> IdList;
 
-			protected:
-				std::set<int> _observers;
-		};
-	
-		class Timer
-		{
-			public:
-				typedef boost::function<void()> TickFunc;
-			private:
-				struct Item
-				{
-					Item(unsigned tick_time, const TickFunc& func)
-						: _tick_time(tick_time), _tick_func(func){}
-					
-					bool operator<(const Item& rhs) const
-					{
-						return _tick_time > rhs._tick_time;
-					}
-	
-					unsigned _tick_time;
-					TickFunc _tick_func;
-				};
-			public:
-				void add(unsigned tick_time, const TickFunc& func)
-				{
-					_queue.push(Item(tick_time, func));
-				}
-
-				void check(unsigned cur_time)
-				{
-					while(!_queue.empty() &&
-						cur_time >= _queue.top()._tick_time)
-					{
-						_queue.top()._tick_func();
-						_queue.pop();
-					}
-				}
+				void attach(int id) { _id_list.insert(id); }
+				void detach(int id) { _id_list.erase(id); }
+				bool empty() const { return _id_list.empty(); }
+				IdList& getObserver() { return _id_list; }
 
 			private:
-				priority_queue<Item> _queue;
+				IdList _id_list;
 		};
 	}
 }

@@ -5,6 +5,7 @@
 #include "battle_def.h"
 #include "mongoDB.h"
 #include "auto_base.h"
+#include "rank_list.h"
 
 namespace gg
 {
@@ -78,10 +79,10 @@ namespace gg
 				SortList _sort_list;
 		};
 
-		class UpdateItem
+		class PathUpdateItem
 		{
 			public:
-				UpdateItem(int type, const PathItemPtr& ptr)
+				PathUpdateItem(int type, const PathItemPtr& ptr)
 					: _type(type), _ptr(ptr){}
 
 				int side() const { return _ptr->side(); }
@@ -132,7 +133,7 @@ namespace gg
 				int _distance;
 				int _speed[MaxSide];
 
-				STDVECTOR(UpdateItem, UpdateItems);
+				STDVECTOR(PathUpdateItem, UpdateItems);
 				mutable UpdateItems _updates;
 		};
 
@@ -158,6 +159,7 @@ namespace gg
 				void getUpdateInfo(qValue& q) { _manager.getUpdateInfo(q); }
 
 			private:
+				int getLinkedId(int id) const;
 				inline bool timerOverTime(int timer_id);
 				void resetTimer();
 				void setTimer(const PLIter& iter);
@@ -171,6 +173,9 @@ namespace gg
 
 		SHAREPTR(Path, PathPtr);
 
+		class Fighter;
+		SHAREPTR(Fighter, FighterPtr);
+
 		class Fighter
 		{
 			public:
@@ -180,9 +185,9 @@ namespace gg
 				virtual int type() const = 0;
 				virtual bool isDead() const = 0;
 				virtual sBattlePtr getBattlePtr() = 0;
+				virtual void resetHp(sBattlePtr ptr) = 0;
 		};
 
-		SHAREPTR(Fighter, FighterPtr);
 		typedef std::deque<FighterPtr> FighterQueue;
 		STDVECTOR(FighterPtr, FighterList);
 
@@ -199,10 +204,11 @@ namespace gg
 				virtual int type() const;
 				virtual bool isDead() const;
 				virtual sBattlePtr getBattlePtr();
+				virtual void resetHp(sBattlePtr ptr);
 				
-				int nation() const { return _nation; }
 				int pid() const { return _pid; }
 				int armyId() const { return _army_id; }
+				int nation() const { return _nation; }
 
 			private:
 				int _pid;
@@ -219,31 +225,49 @@ namespace gg
 		{
 			public:
 				NpcFighter(const mongo::BSONElement& obj);
-				NpcFighter(int id);
+				NpcFighter(int id, int map_id);
 
 				virtual mongo::BSONObj toBSON() const;
 				virtual void getInfo(qValue& q) const;
+				mongo::BSONArray manHpBSON() const;
 
 				virtual int type() const;
 				virtual bool isDead() const;
 				virtual sBattlePtr getBattlePtr();
+				virtual void resetHp(sBattlePtr ptr);
 
 			private:
 				int _id;
 				int _hp;
+				int _map_id;
 				std::vector<int> _man_hp;
 		};
 
 		SHAREPTR(NpcFighter, NpcFighterPtr);
 		STDVECTOR(NpcFighterPtr, NpcFighterList);
 
+		class BattleUpdateItem
+		{
+			public:
+				BattleUpdateItem(int type, int side, const FighterPtr& ptr)
+					: _type(type), _side(side), _ptr(ptr){}
+
+				int side() const { return _side; }
+				inline void getInfo(qValue& q) const;
+
+			private:
+				int _type;
+				int _side;
+				FighterPtr _ptr;
+		};
+
 		class BattleField
-			: public _auto_meta, public KingdomWar::Updater
+			: public _auto_meta, public Observer
 		{
 			public:
 				BattleField(CityPtr& ptr);
 
-				void loadDB();
+				void init();
 
 				int state() const { return _state; }
 
@@ -252,14 +276,16 @@ namespace gg
 				void handleAddNpc(unsigned tick_time);
 
 				inline void getMainInfo(qValue& q) const { q = _main_info.Copy(); }
-				void getUpdateInfo(qValue& q) const;
+				void tick();
+				bool onFight(playerDataPtr d, int army_id);
 
-				void update();
-
-				virtual void tick();
+				void doneBattle(unsigned time, int queue_id, PlayerFighterPtr atk_ptr, PlayerFighterPtr def_ptr);
+				void doneBattle(unsigned time, int queue_id, PlayerFighterPtr atk_ptr, NpcFighterPtr def_ptr);
 
 			private:
+				void loadDB();
 				virtual bool _auto_save();
+				void setModify();
 
 				void tryGetAttacker();
 				void tryGetDefender();
@@ -284,6 +310,7 @@ namespace gg
 
 			private:
 				CityPtr _city;
+				bool _modify;
 				int _state;
 				unsigned _last_battle_time;
 				std::vector<int> _queue_state;
@@ -292,6 +319,13 @@ namespace gg
 				std::vector<FighterQueue> _attacker_queue;
 				int _first_battle_nation;
 				int _wins[3];
+
+				STDVECTOR(BattleUpdateItem, UpdateItems);
+				STDVECTOR(UpdateItems, UpdateItemsList);
+				UpdateItemsList _updates;
+				STDVECTOR(std::string, UpdateReports);
+				STDVECTOR(UpdateReports, UpdateReportsList);
+				UpdateReportsList _update_reps;
 
 				mutable qValue _main_info;
 		};
@@ -306,23 +340,37 @@ namespace gg
 
 				City(const Json::Value& info);
 
+				void init();
 				int id() const { return _id; }
 				int state();
 
-				void loadDB();
+				void tryLoadPlayer(playerDataPtr d, int army_id);
 				void addPath(const PathPtr& ptr) { _paths.push_back(ptr); }
 				int nation() const { return _nation; }
 
 				int enter(unsigned time, playerDataPtr d, int army_id);
 				int leave(unsigned time, playerDataPtr d, int army_id, int to_city_id);
 
-				void attach(playerDataPtr d) { _battle_field->attach(d); }
-				void detach(playerDataPtr d) { _battle_field->detach(d); }
+				void attach(int id) { _battle_field->attach(id); }
+				void detach(int id) { _battle_field->detach(id); }
+				void getMainInfo(qValue& q) const { return _battle_field->getMainInfo(q); }
 
-				void tick() { _battle_field->tick(); }
+				bool onFight(playerDataPtr d, int army_id);
+
+				int getOutput(int nation) const { return _output[nation]; }
+				int outputType() const { return _output_type; }
+				int maxOutput() const { return _output_max; }
+
+				NpcFighterPtr createNpc();
+				int getNpcId();
+
+			private:
+				void loadDB();
 			
 			private:
 				virtual bool _auto_save();
+				void tickOutput();
+				void tickCreateNpc();
 				
 				void noticeAddAttacker(unsigned tick_time);
 				void noticeAddDefender(unsigned tick_time);
@@ -345,6 +393,16 @@ namespace gg
 				PlayerFighterList _defender_backup;
 				PlayerFighterList _attacker_backup;
 				BattleFieldPtr _battle_field;
+
+				STDVECTOR(int, Output);
+				Output _output;
+				int _output_type;
+				int _output_max;
+
+				int _npc_id;
+				int _npc_add;
+				int _npc_max;
+				int _npc_start;
 		};
 
 		class PathList
@@ -378,6 +436,7 @@ namespace gg
 				void push(const CityPtr& ptr);
 				void update(bool is_first = false);	
 				void tick();
+				int size() const { return _citys.size(); }
 
 				void getStateInfo(qValue& q) { q = _main_state_info.Copy(); }
 				void getUpStateInfo(qValue& q) { q = _update_state_info; } 
@@ -395,6 +454,85 @@ namespace gg
 				qValue _update_state_info;
 				qValue _main_nation_info;
 				qValue _update_nation_info;
+		};
+
+		class RankItem
+		{
+			public:
+				RankItem(playerDataPtr d);
+				
+				void getInfo(qValue& q) const;
+
+				int id() const { return _pid; }
+				int value() const { return _exploit; }
+
+			private:
+				int _pid;
+				std::string _name;
+				int _nation;
+				int _exploit;
+		};
+
+		SHAREPTR(RankItem, RankItemPtr);
+
+		class RankMgr
+		{
+			public:
+				RankMgr();
+
+				void update(playerDataPtr d, int old_value);
+				void getInfo(playerDataPtr d, int begin, int end, qValue& q);
+				int getRank(playerDataPtr d) const;
+				void packageInfo(const RankItem& item);
+
+			private:
+				typedef RankList1<RankItem> RankList;
+				RankList _rank;
+
+				// temp
+				qValue _info;
+				int _rk;
+		};
+
+		class State
+			: public _auto_meta
+		{
+			public:
+				enum
+				{
+					Closed = 0,
+					Opened,
+					Reset,
+				};
+
+				void loadDB();
+				bool get() const { return _
+
+				unsigned next5MinTime() const { return _next_5_min_tick_time; }
+				void reset5MinTime();
+
+				unsigned nextTickTime() const { return _next_tick_time; }
+				int nextAction() const { return _next_action; }
+				void resetAction();
+
+			private:
+				virtual bool _auto_save();
+
+			private:
+				unsigned _next_5_min_tick_time;
+				unsigned _next_tick_time;
+				int _next_action;
+				int _state;
+		};
+
+		struct NpcRule
+		{
+			NpcRule(const Json::Value& info);
+
+			int _power_begin;
+			int _power_end;
+			int _npc_begin;
+			int _npc_end;
 		};
 	}
 }
